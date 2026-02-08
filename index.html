@@ -66,30 +66,37 @@
         // 2. Fetch Data dari API Dramabox (Client Side)
         // 2. Fetch Data dari API Dramabox (Client Side)
         async function init() {
-            if (!bookId) return showError("Book ID tidak ditemukan di URL");
+            if (!bookId) return showError("Book ID tidak ditemukan");
 
             try {
-                // Tampilkan loading state
-                document.getElementById('title').innerText = "Sedang mengambil playlist...";
+                document.getElementById('title').innerText = "Mengambil data...";
 
-                // Request ke Google Apps Script (Proxy)
-                // Mode 'cors' penting agar browser tidak memblokir response dari Google
-                const res = await fetch(`${GAS_API_URL}?action=getChapters&bookId=${bookId}`, {
+                // Tambahkan timestamp agar HP tidak membuka cache lama
+                const url = `${GAS_API_URL}?action=getChapters&bookId=${bookId}&t=${new Date().getTime()}`;
+
+                const res = await fetch(url, {
                     method: 'GET',
-                    redirect: 'follow' 
+                    redirect: 'follow' // Penting: Ikuti redirect Google
                 });
 
-                if (!res.ok) throw new Error("Gagal menghubungi server proxy");
+                if (!res.ok) throw new Error("Koneksi gagal");
 
-                const json = await res.json();
+                // TRIK BARU: Ambil sebagai TEXT dulu
+                const textData = await res.text();
                 
-                // Normalisasi data (kadang API return {data: []} atau langsung [])
+                // Lalu PARSE manual
+                let json;
+                try {
+                    json = JSON.parse(textData);
+                } catch (err) {
+                    throw new Error("Gagal membaca data dari server");
+                }
+
                 const data = json.data || json; 
 
                 if (data && data.length > 0) {
                     allChapters = data;
                     currentIndex = initialIndex;
-                    
                     renderPlaylist();
                     loadEpisode(currentIndex);
                     document.getElementById('loading').style.display = 'none';
@@ -98,11 +105,11 @@
                 }
 
             } catch (e) {
-                console.error(e);
-                showError("Gagal mengambil data: " + e.message);
+                // Tampilkan error spesifik di layar HP biar ketahuan
+                showError(e.message);
             }
         }
-
+        
         // 3. Fungsi Load Video ke Player
         function loadEpisode(index) {
             if (index < 0 || index >= allChapters.length) return;
