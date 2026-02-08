@@ -62,28 +62,28 @@
         const initialIndex = parseInt(params.get('index')) || 0;
         targetQuality = parseInt(params.get('quality')) || 720;
 
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyA2hDrAwPGqcqa5w84X-DzB4cGIhxrRL-rmQFL-PDZvfjTP_BJF4x7p0huWd21ahQQ/exec";
         // 2. Fetch Data dari API Dramabox (Client Side)
         // 2. Fetch Data dari API Dramabox (Client Side)
         async function init() {
             if (!bookId) return showError("Book ID tidak ditemukan di URL");
 
             try {
-                // URL Asli API
-                const targetUrl = `https://dramabox.bagahproject.dev/api/chapters?bookId=${bookId}`;
-                
-                // KITA BUNGKUS DENGAN PROXY AGAR TIDAK ERROR CORS
-                // Menggunakan layanan allorigins.win (Gratis & Stabil)
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+                // Tampilkan loading state
+                document.getElementById('title').innerText = "Sedang mengambil playlist...";
 
-                const res = await fetch(proxyUrl);
-                
-                if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-                
+                // Request ke Google Apps Script (Proxy)
+                // Mode 'cors' penting agar browser tidak memblokir response dari Google
+                const res = await fetch(`${GAS_API_URL}?action=getChapters&bookId=${bookId}`, {
+                    method: 'GET',
+                    redirect: 'follow' 
+                });
+
+                if (!res.ok) throw new Error("Gagal menghubungi server proxy");
+
                 const json = await res.json();
                 
-                // Validasi data apakah array atau object
-                // Kadang API return { data: [...] }, kadang langsung [...]
-                // Sesuaikan dengan struktur JSON Dramabox
+                // Normalisasi data (kadang API return {data: []} atau langsung [])
                 const data = json.data || json; 
 
                 if (data && data.length > 0) {
@@ -94,11 +94,12 @@
                     loadEpisode(currentIndex);
                     document.getElementById('loading').style.display = 'none';
                 } else {
-                    showError("Data episode kosong atau format API berubah.");
+                    showError("Tidak ada episode ditemukan.");
                 }
+
             } catch (e) {
-                console.error(e); // Cek console browser jika ingin debug
-                showError("Gagal fetch data: " + e.message);
+                console.error(e);
+                showError("Gagal mengambil data: " + e.message);
             }
         }
 
