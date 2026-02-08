@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drama Player</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        video { width: 100%; max-height: 80vh; }
+        .info { padding: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <h3 id="title">Memuat Video...</h3>
+    </div>
+    
+    <video id="videoPlayer" controls autoplay>
+        <source src="" type="video/mp4">
+        Browser Anda tidak mendukung pemutar video.
+    </video>
+
+    <script>
+        // Inisialisasi Telegram Mini App
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Membuka Mini App secara full screen
+
+        // Ambil URL video dari parameter URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const videoSrc = urlParams.get('video');
+        const title = urlParams.get('title');
+
+        if (videoSrc) {
+            const player = document.getElementById('videoPlayer');
+            player.src = videoSrc;
+            document.getElementById('title').innerText = title || "Now Playing";
+        } else {
+            document.getElementById('title').innerText = "Video tidak ditemukan.";
+        }
+    </script>
+</body>
+</html>
