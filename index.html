@@ -2,42 +2,179 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Drama Player</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
-        video { width: 100%; max-height: 80vh; }
-        .info { padding: 20px; text-align: center; }
+        body { background-color: #0f172a; color: #fff; font-family: sans-serif; overflow: hidden; }
+        /* Custom Scrollbar untuk Playlist */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .active-ep { background-color: #3b82f6; color: white; border-color: #3b82f6; }
     </style>
 </head>
-<body>
-    <div class="info">
-        <h3 id="title">Memuat Video...</h3>
+<body class="flex flex-col h-screen">
+
+    <div class="relative w-full aspect-video bg-black flex-shrink-0">
+        <video id="player" playsinline controls class="w-full h-full">
+            <source src="" type="video/mp4" />
+        </video>
+        <div id="loading" class="absolute inset-0 flex items-center justify-center bg-black z-50">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+        </div>
     </div>
-    
-    <video id="videoPlayer" controls autoplay>
-        <source src="" type="video/mp4">
-        Browser Anda tidak mendukung pemutar video.
-    </video>
 
+    <div class="p-4 bg-slate-900 border-b border-slate-800 flex justify-between items-center flex-shrink-0">
+        <div class="overflow-hidden">
+            <h1 id="title" class="text-sm font-bold truncate text-blue-400">Memuat Data...</h1>
+            <p id="subtitle" class="text-xs text-slate-400">Mohon tunggu</p>
+        </div>
+        <button onclick="tg.close()" class="text-xs bg-slate-800 px-3 py-1 rounded text-slate-400">Tutup</button>
+    </div>
+
+    <div class="flex-grow overflow-y-auto bg-slate-950 p-2">
+        <h3 class="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide sticky top-0 bg-slate-950 py-1">Daftar Episode</h3>
+        <div id="playlist" class="grid grid-cols-4 gap-2 pb-10">
+            </div>
+    </div>
+
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
     <script>
-        // Inisialisasi Telegram Mini App
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Membuka Mini App secara full screen
+        tg.expand();
+        tg.enableClosingConfirmation(); // Konfirmasi sebelum menutup
 
-        // Ambil URL video dari parameter URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const videoSrc = urlParams.get('video');
-        const title = urlParams.get('title');
+        // Setup Plyr
+        const player = new Plyr('#player', {
+            controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'fullscreen'],
+            autoplay: true
+        });
 
-        if (videoSrc) {
-            const player = document.getElementById('videoPlayer');
-            player.src = videoSrc;
-            document.getElementById('title').innerText = title || "Now Playing";
-        } else {
-            document.getElementById('title').innerText = "Video tidak ditemukan.";
+        // State Management
+        let allChapters = [];
+        let currentIndex = 0;
+        let targetQuality = 720; // Default quality preference
+
+        // 1. Ambil Parameter dari URL
+        const params = new URLSearchParams(window.location.search);
+        const bookId = params.get('bookId');
+        const initialIndex = parseInt(params.get('index')) || 0;
+        targetQuality = parseInt(params.get('quality')) || 720;
+
+        // 2. Fetch Data dari API Dramabox (Client Side)
+        async function init() {
+            if (!bookId) return showError("Book ID tidak ditemukan");
+
+            try {
+                const res = await fetch(`https://dramabox.bagahproject.dev/api/chapters?bookId=${bookId}`);
+                const json = await res.json();
+                
+                if (json.data && json.data.length > 0) {
+                    allChapters = json.data;
+                    currentIndex = initialIndex;
+                    
+                    renderPlaylist();
+                    loadEpisode(currentIndex);
+                    document.getElementById('loading').style.display = 'none';
+                } else {
+                    showError("Data episode kosong.");
+                }
+            } catch (e) {
+                showError("Gagal mengambil data: " + e.message);
+            }
         }
+
+        // 3. Fungsi Load Video ke Player
+        function loadEpisode(index) {
+            if (index < 0 || index >= allChapters.length) return;
+
+            currentIndex = index;
+            const chapter = allChapters[index];
+            
+            // Update UI Teks
+            document.getElementById('title').innerText = chapter.chapterName;
+            document.getElementById('subtitle').innerText = `Episode ${index + 1} dari ${allChapters.length}`;
+
+            // Cari URL Video sesuai kualitas
+            const videos = chapter.cdnList[0].videoPathList;
+            let videoObj = videos.find(v => v.quality === targetQuality) || videos[0]; // Fallback ke yg ada
+
+            // Set Source ke Plyr
+            player.source = {
+                type: 'video',
+                title: chapter.chapterName,
+                sources: [{ src: videoObj.videoPath, type: 'video/mp4' }]
+            };
+
+            // Highlight tombol playlist aktif
+            updateActiveButton(index);
+        }
+
+        // 4. Render Tombol Playlist
+        function renderPlaylist() {
+            const container = document.getElementById('playlist');
+            container.innerHTML = ''; // Reset
+
+            allChapters.forEach((chap, idx) => {
+                const btn = document.createElement('button');
+                // Ambil angka saja dari nama chapter (misal "EP 1" jadi "1") biar rapi
+                const label = chap.chapterName.replace('EP ', '').replace('Episode ', ''); 
+                
+                btn.innerText = label;
+                btn.className = `p-2 rounded text-xs font-medium border border-slate-700 bg-slate-800 hover:bg-slate-700 transition ${idx === currentIndex ? 'active-ep' : 'text-slate-300'}`;
+                btn.id = `ep-btn-${idx}`;
+                
+                btn.onclick = () => {
+                    loadEpisode(idx);
+                    player.play();
+                };
+                
+                container.appendChild(btn);
+            });
+            
+            // Auto scroll ke episode yang aktif
+            setTimeout(() => {
+                const activeBtn = document.getElementById(`ep-btn-${currentIndex}`);
+                if (activeBtn) activeBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+            }, 500);
+        }
+
+        // 5. Update UI Tombol Aktif
+        function updateActiveButton(idx) {
+            document.querySelectorAll('#playlist button').forEach(b => {
+                b.classList.remove('active-ep', 'bg-blue-600', 'text-white');
+                b.classList.add('bg-slate-800', 'text-slate-300');
+            });
+            const btn = document.getElementById(`ep-btn-${idx}`);
+            if (btn) {
+                btn.classList.remove('bg-slate-800', 'text-slate-300');
+                btn.classList.add('active-ep');
+            }
+        }
+
+        // 6. Logic Auto Next (Saat video selesai)
+        player.on('ended', () => {
+            if (currentIndex < allChapters.length - 1) {
+                // Tampilkan notifikasi kecil atau langsung putar next
+                const nextIndex = currentIndex + 1;
+                // Delay 1 detik biar smooth
+                setTimeout(() => {
+                    loadEpisode(nextIndex);
+                    player.play();
+                }, 1000);
+            }
+        });
+
+        function showError(msg) {
+            document.getElementById('title').innerText = "Error";
+            document.getElementById('subtitle').innerText = msg;
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // Jalankan
+        init();
+
     </script>
 </body>
 </html>
